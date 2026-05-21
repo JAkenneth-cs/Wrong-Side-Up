@@ -1,5 +1,5 @@
 import random
-
+from models.game_state import State
 
 class Player:
     """Base player class. Demonstrates Encapsulation (_name, _score private)
@@ -8,6 +8,7 @@ class Player:
     def __init__(self, name):
         self._name = name
         self._score = 0
+        self._captured_symbols = []
 
     @property
     def name(self):
@@ -17,11 +18,19 @@ class Player:
     def score(self):
         return self._score
 
-    def add_score(self):
+    @property
+    def captured_symbols(self):
+        return self._captured_symbols
+
+    def add_score(self, symbol):
         self._score += 1
+        # Add both cards of the pair to the deck
+        self._captured_symbols.append(symbol)
+        self._captured_symbols.append(symbol)
 
     def reset_score(self):
         self._score = 0
+        self._captured_symbols = []
 
     def choose_card(self, board, flipped_indices):
         """Polymorphic hook — subclasses decide how to pick a card."""

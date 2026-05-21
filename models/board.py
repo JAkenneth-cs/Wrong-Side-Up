@@ -1,22 +1,22 @@
 import random
-from models.card import NumberCard, AnimalCard
-from assets.themes.numbers import NUMBER_SYMBOLS
-from assets.themes.animals import ANIMAL_SYMBOLS
+from models.card import Card
 
-# card_count -> (rows, cols)
-GRID_SIZES = {12: (3, 4), 16: (4, 4), 20: (4, 5)}
-
+GRID_SIZES = {
+    "Easy": (4, 4),    # 16 cards = 8 pairs
+    "Moderate": (4, 5),  # 20 cards = 10 pairs
+    "Difficult": (5, 6)     # 30 cards = 15 pairs
+}
 
 class Board:
     """Manages the card grid. Demonstrates Encapsulation — _cards is private
     and all access goes through public methods."""
 
-    def __init__(self, card_count=16, theme="numbers"):
-        if card_count not in GRID_SIZES:
-            raise ValueError(f"card_count must be one of {list(GRID_SIZES)}")
-        self._card_count = card_count
-        self._theme = theme
-        self._rows, self._cols = GRID_SIZES[card_count]
+    def __init__(self, difficulty="Easy"):
+        if difficulty not in GRID_SIZES:
+            raise ValueError(f"difficulty must be one of {list(GRID_SIZES.keys())}")
+        self._difficulty = difficulty
+        self._rows, self._cols = GRID_SIZES[difficulty]
+        self._card_count = self._rows * self._cols
         self._cards = []
         self._build()
 
@@ -34,15 +34,12 @@ class Board:
 
     def _build(self):
         pairs = self._card_count // 2
-        if self._theme == "animals":
-            symbols = ANIMAL_SYMBOLS[:pairs]
-            card_cls = AnimalCard
-        else:
-            symbols = NUMBER_SYMBOLS[:pairs]
-            card_cls = NumberCard
-        cards = [card_cls(s) for s in symbols * 2]
-        random.shuffle(cards)
-        self._cards = cards
+        # Symbols are simply 1 to 32, which will later map to the 32 unique placeholder images
+        symbols = list(range(1, pairs + 1))
+        
+        # Create pairs of cards
+        self._cards = [Card(s) for s in symbols * 2]
+        random.shuffle(self._cards)
 
     def get_card(self, row, col):
         return self._cards[row * self._cols + col]
