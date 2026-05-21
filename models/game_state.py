@@ -41,6 +41,7 @@ class GameState:
         return self._second_pos
 
     def start(self):
+        self._game_mode.start_game()
         self._state = State.FIRST_FLIP
 
     def handle_flip(self, card, row, col):
@@ -75,7 +76,7 @@ class GameState:
         if self._board.check_match(self._first_card, self._second_card):
             self._first_card.set_matched()
             self._second_card.set_matched()
-            self._game_mode.on_match()
+            self._game_mode.on_match(self._first_card.symbol)
             result = "match"
         else:
             self._first_card.flip()   # face down again
@@ -90,10 +91,35 @@ class GameState:
 
         if self._board.is_complete():
             self._state = State.GAME_OVER
+            self._game_mode.end_game()
         else:
             self._state = State.FIRST_FLIP
 
         return result
+
+    def timeout_turn(self):
+        """Called when a turn times out without playing."""
+        if self._state == State.FIRST_FLIP:
+            self._game_mode.on_miss()
+        elif self._state == State.SECOND_FLIP:
+            if self._first_card:
+                self._first_card.flip()
+            self._first_card = None
+            self._first_pos = None
+            self._state = State.FIRST_FLIP
+            self._game_mode.on_miss()
+
+    def update(self):
+        """Pass update tick to the game mode (e.g. for timers)."""
+        if self._state != State.GAME_OVER:
+            self._game_mode.update()
+            
+            t = self._game_mode.turn_time_remaining
+            if t is not None and t == 0 and self._state in [State.FIRST_FLIP, State.SECOND_FLIP]:
+                self.timeout_turn()
+                
+            if self._game_mode.is_game_over:
+                self._state = State.GAME_OVER
 
     def reset(self, board, game_mode):
         self._board = board

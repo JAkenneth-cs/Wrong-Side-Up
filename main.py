@@ -1,9 +1,16 @@
 import pygame
 import sys
 import random
+import time
+from ui import Button
+from models.board import Board
+from models.game_mode import SoloMode, PVPMode, PVAIMode
+from models.game_state import GameState, State
+from models.player import HumanPlayer, AIPlayer
+from animations import AnimationManager, FlipAnimator
 
 def draw_text(surface, text, font, color, x, y):
-    """Helper function to draw text and return its rect"""
+    """Helper function to draw static text and return its rect"""
     text_obj = font.render(text, True, color)
     text_rect = text_obj.get_rect()
     text_rect.topleft = (x, y)
@@ -11,42 +18,137 @@ def draw_text(surface, text, font, color, x, y):
     return text_rect
 
 def main():
-    # Initialize Pygame
     pygame.init()
-    
-    # Constants
     WIDTH, HEIGHT = 800, 600
     FPS = 60
-    
-    # Set up the display
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("Wrong Side Up")
     clock = pygame.time.Clock()
     
-    # Fonts
     font_path = "game-assets/fonts/LondrinaSolid-Black.ttf"
     try:
-        title_font = pygame.font.Font(font_path, 90)  # Larger for the title
+        title_font = pygame.font.Font(font_path, 90)
         menu_font = pygame.font.Font(font_path, 50)
-    except Exception as e:
-        print(f"Warning: Could not load custom font ({e}), falling back to default.")
+        card_font = pygame.font.Font(font_path, 36)
+        info_font = pygame.font.Font(font_path, 30)
+    except Exception:
         title_font = pygame.font.Font(None, 90)
         menu_font = pygame.font.Font(None, 50)
+        card_font = pygame.font.Font(None, 36)
+        info_font = pygame.font.Font(None, 30)
         
-    # State Machine
     state = "MAIN_MENU"
+    selected_mode = None
+    selected_difficulty = None
     
-    # Colors
     WHITE = (255, 255, 255)
     GRAY = (180, 180, 180)
     BLACK = (0, 0, 0)
-    BG_BASE_COLOR = (20, 60, 20)  # Dark green texture placeholder
+    BG_BASE_COLOR = (20, 60, 20)
+    CARD_BACK = (40, 80, 150)
+    CARD_FRONT = (200, 200, 200)
+    CARD_MATCHED = (100, 255, 100)
     
-    # Placeholder Lightbulb properties
     bulb_x, bulb_y = 550, 250
     base_glow_radius = 120
+
+    main_menu_buttons = [
+        Button(50, 250, "Play", menu_font, GRAY, WHITE),
+        Button(50, 330, "How to play", menu_font, GRAY, WHITE),
+        Button(50, 410, "Quit", menu_font, GRAY, WHITE)
+    ]
     
-    # Main game loop
+    mode_select_buttons = [
+        Button(50, 250, "Solo", menu_font, GRAY, WHITE),
+        Button(50, 330, "1v1", menu_font, GRAY, WHITE),
+        Button(50, 410, "Computer", menu_font, GRAY, WHITE),
+        Button(50, 490, "Back", menu_font, GRAY, WHITE)
+    ]
+
+    difficulty_select_buttons = [
+        Button(50, 250, "Easy (4x4)", menu_font, GRAY, WHITE),
+        Button(50, 330, "Moderate (4x5)", menu_font, GRAY, WHITE),
+        Button(50, 410, "Difficult (5x6)", menu_font, GRAY, WHITE),
+        Button(50, 490, "Back", menu_font, GRAY, WHITE)
+    ]
+    
+    playing_quit_button = Button(WIDTH - 150, HEIGHT - 100, "Quit", menu_font, GRAY, WHITE)
+    
+    # Load Card Assets
+    try:
+        card_back_orig = pygame.image.load("game-assets/sprite/cards/Backsides/DefaultForest.png").convert_alpha()
+        spritesheet = pygame.image.load("game-assets/sprite/cards/ForestCards.png").convert_alpha()
+    except Exception as e:
+        print(f"Failed to load card assets: {e}")
+        pygame.quit()
+        sys.exit()
+
+    card_front_orig = {}
+    idx = 1
+    for row in range(4):
+        for col in range(13):
+            if idx > 32:
+                break
+            x = col * (23 + 1)
+            y = row * (35 + 1)
+            rect = pygame.Rect(x, y, 23, 35)
+            card_front_orig[idx] = spritesheet.subsurface(rect)
+            idx += 1
+    
+    # Game variables
+    board = None
+    game_state = None
+    game_mode = None
+    card_width, card_height = 0, 0
+    margin = 10
+    start_x, start_y = 0, 0
+    check_time = 0
+    CHECK_DELAY = 1000 # 1 second delay when checking two cards
+    ai_last_move_time = 0
+    anim_manager = AnimationManager()
+    flip_animator = FlipAnimator()
+    
+    # Store matched cards to hide them from board
+    hidden_cards = set()
+
+    def init_game(mode, difficulty):
+        nonlocal board, game_state, game_mode, card_width, card_height, start_x, start_y, check_time, ai_last_move_time, hidden_cards
+        board = Board(difficulty)
+        anim_manager.flying_cards.clear()
+        flip_animator.flipping_cards.clear()
+        hidden_cards.clear()
+        
+        if mode == "Solo":
+            players = [HumanPlayer("Player 1")]
+            game_mode = SoloMode(players, difficulty)
+        elif mode == "1v1":
+            players = [HumanPlayer("Player 1"), HumanPlayer("Player 2")]
+            game_mode = PVPMode(players)
+        elif mode == "Computer":
+            players = [HumanPlayer("Player 1"), AIPlayer("Computer")]
+            game_mode = PVAIMode(players, difficulty)
+            
+        game_state = GameState(board, game_mode)
+        game_state.start()
+        
+        # Calculate board rendering variables
+        available_width = WIDTH - 40 # Leave small margins
+        available_height = HEIGHT - 120 # Leave top space for player profiles
+        
+        cols = board.cols
+        rows = board.rows
+        
+        card_width = min(80, (available_width - (cols + 1) * margin) // cols)
+        card_height = min(120, (available_height - (rows + 1) * margin) // rows)
+        
+        # Center board horizontally, push down vertically
+        board_w = cols * card_width + (cols - 1) * margin
+        start_x = (WIDTH - board_w) // 2
+        start_y = 100
+        
+        check_time = 0
+        ai_last_move_time = pygame.time.get_ticks()
+        
     running = True
     while running:
         mouse_pos = pygame.mouse.get_pos()
@@ -56,101 +158,277 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
             if event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:  # Left click
+                if event.button == 1:
                     mouse_clicked = True
                     
-        # ---------------------------------------------------------
-        # STATE: MAIN MENU
-        # ---------------------------------------------------------
-        if state == "MAIN_MENU":
-            # 1. Flickering Logic
-            # Randomly determine if the light is faltering this frame
+        # Background Effects for Menu States
+        if state in ["MAIN_MENU", "MODE_SELECT", "DIFFICULTY_SELECT"]:
             flicker_val = random.randint(0, 100)
-            is_flickering = flicker_val > 90  # 10% chance to dim heavily
+            is_flickering = flicker_val > 90
             
             if is_flickering:
-                bg_color = (10, 30, 10) # Much darker background
+                bg_color = (10, 30, 10)
                 glow_alpha = random.randint(20, 80)
                 glow_radius = base_glow_radius - random.randint(20, 40)
             else:
                 bg_color = BG_BASE_COLOR
-                # Subtle normal pulsing
                 glow_alpha = random.randint(150, 200)
                 glow_radius = base_glow_radius + random.randint(-5, 5)
                 
             screen.fill(bg_color)
-            
-            # 2. Draw Placeholder Lightbulb
-            # Wire/String
             pygame.draw.line(screen, (10,10,10), (bulb_x, 0), (bulb_x, bulb_y - 20), 4)
-            # Base of the bulb
             pygame.draw.rect(screen, (30,30,30), (bulb_x - 15, bulb_y - 30, 30, 20))
-            
-            # Draw the Glow (requires a surface with alpha)
             glow_surface = pygame.Surface((glow_radius*2, glow_radius*2), pygame.SRCALPHA)
-            # A soft greenish-yellow glow
             pygame.draw.circle(glow_surface, (200, 255, 150, glow_alpha), (glow_radius, glow_radius), glow_radius)
             screen.blit(glow_surface, (bulb_x - glow_radius, bulb_y - glow_radius))
-            
-            # Draw actual bulb (white circle)
             bulb_color = (200, 255, 200) if is_flickering else (240, 255, 240)
             pygame.draw.circle(screen, bulb_color, (bulb_x, bulb_y), 25)
-            
-            # 3. Draw Menu UI
-            # Title
+
+        # STATE: MAIN MENU
+        if state == "MAIN_MENU":
             draw_text(screen, "Wrong Side Up", title_font, WHITE, 50, 100)
-            
-            # Menu Options
-            menu_items = ["Play", "How to play", "Quit"]
-            start_y = 250
-            
-            for i, item in enumerate(menu_items):
-                item_y = start_y + (i * 80)
-                
-                # Check for hover
-                temp_rect = menu_font.render(item, True, WHITE).get_rect(topleft=(50, item_y))
-                is_hovered = temp_rect.collidepoint(mouse_pos)
-                
-                # Apply hover effects (color change and slight shift to the right)
-                color = WHITE if is_hovered else GRAY
-                x_pos = 70 if is_hovered else 50
-                
-                rect = draw_text(screen, item, menu_font, color, x_pos, item_y)
-                
-                # Handle click
-                if is_hovered and mouse_clicked:
-                    if item == "Play":
-                        state = "PLAYING"
-                    elif item == "How to play":
+            for btn in main_menu_buttons:
+                btn.update(mouse_pos)
+                btn.draw(screen)
+                if btn.check_click(mouse_pos, mouse_clicked):
+                    if btn.text == "Play":
+                        state = "MODE_SELECT"
+                    elif btn.text == "How to play":
                         state = "HOW_TO_PLAY"
-                    elif item == "Quit":
+                    elif btn.text == "Quit":
                         running = False
+
+        # STATE: MODE SELECT
+        elif state == "MODE_SELECT":
+            draw_text(screen, "Select Mode", title_font, WHITE, 50, 100)
+            for btn in mode_select_buttons:
+                btn.update(mouse_pos)
+                btn.draw(screen)
+                if btn.check_click(mouse_pos, mouse_clicked):
+                    if btn.text == "Back":
+                        state = "MAIN_MENU"
+                    else:
+                        selected_mode = btn.text
+                        state = "DIFFICULTY_SELECT"
+
+        # STATE: DIFFICULTY SELECT
+        elif state == "DIFFICULTY_SELECT":
+            draw_text(screen, "Select Difficulty", title_font, WHITE, 50, 100)
+            for btn in difficulty_select_buttons:
+                btn.update(mouse_pos)
+                btn.draw(screen)
+                if btn.check_click(mouse_pos, mouse_clicked):
+                    if btn.text == "Back":
+                        state = "MODE_SELECT"
+                    else:
+                        if "Easy" in btn.text:
+                            selected_difficulty = "Easy"
+                        elif "Moderate" in btn.text:
+                            selected_difficulty = "Moderate"
+                        elif "Difficult" in btn.text:
+                            selected_difficulty = "Difficult"
                         
-        # ---------------------------------------------------------
-        # STATE: PLAYING (Placeholder)
-        # ---------------------------------------------------------
+                        init_game(selected_mode, selected_difficulty)
+                        state = "PLAYING"
+                        
+        # STATE: PLAYING
         elif state == "PLAYING":
             screen.fill((30, 30, 30))
-            draw_text(screen, "Game Phase Placeholder", menu_font, WHITE, 50, HEIGHT//2 - 40)
-            draw_text(screen, "Press ESC to return to Menu", menu_font, GRAY, 50, HEIGHT//2 + 20)
             
-            keys = pygame.key.get_pressed()
-            if keys[pygame.K_ESCAPE]:
-                state = "MAIN_MENU"
+            # Auto-resolve CHECKING state after delay
+            if game_state.state == State.CHECKING:
+                if pygame.time.get_ticks() - check_time > CHECK_DELAY:
+                    p1 = game_state.first_pos
+                    p2 = game_state.second_pos
+                    c1 = board.get_card(*p1) if p1 else None
+                    c2 = board.get_card(*p2) if p2 else None
+                    
+                    res = game_state.resolve()
+                    
+                    if res == "match" and p1 and p2 and c1 and c2:
+                        hidden_cards.add(id(c1))
+                        hidden_cards.add(id(c2))
+                        
+                        # Determine target corner based on current player
+                        current = game_mode.current_player
+                        
+                        thumb_w, thumb_h = 24, 36
+                        overlap_x = 12
+                        
+                        is_p1 = (current == game_mode.players[0])
+                        
+                        if isinstance(game_mode, SoloMode):
+                            base_x, base_y = 50, 95
+                        else:
+                            base_x = 50 if is_p1 else WIDTH - 200
+                            base_y = 85
+                            
+                        # Calculate exact target position in the deck stack
+                        # The player's score was already incremented by GameState, 
+                        # so captured_symbols already has them. 
+                        # The two cards just added are at len-2 and len-1.
+                        idx1 = len(current.captured_symbols) - 2
+                        idx2 = len(current.captured_symbols) - 1
+                        
+                        target_x1 = base_x + idx1 * overlap_x
+                        target_x2 = base_x + idx2 * overlap_x
+                        
+                        cx1 = start_x + p1[1] * (card_width + margin)
+                        cy1 = start_y + p1[0] * (card_height + margin)
+                        cx2 = start_x + p2[1] * (card_width + margin)
+                        cy2 = start_y + p2[0] * (card_height + margin)
+                        
+                        anim_manager.add_flying_card(card_front_orig[c1.symbol], cx1, cy1, target_x1, base_y, thumb_w, thumb_h, owner=current)
+                        anim_manager.add_flying_card(card_front_orig[c2.symbol], cx2, cy2, target_x2, base_y, thumb_w, thumb_h, owner=current)
+                    
+                    elif res == "miss" and c1 and c2:
+                        flip_animator.start_flip(c1, False)
+                        flip_animator.start_flip(c2, False)
+            else:
+                game_state.update()
+
+            if game_state.state != State.GAME_OVER:
+                current_player = game_mode.current_player
                 
-        # ---------------------------------------------------------
-        # STATE: HOW TO PLAY (Placeholder)
-        # ---------------------------------------------------------
-        elif state == "HOW_TO_PLAY":
-            screen.fill((20, 20, 40))
-            draw_text(screen, "How to Play Instructions", menu_font, WHITE, 50, HEIGHT//2 - 40)
-            draw_text(screen, "Press ESC to return to Menu", menu_font, GRAY, 50, HEIGHT//2 + 20)
+                if isinstance(current_player, AIPlayer):
+                    # AI logic
+                    if game_state.state in [State.FIRST_FLIP, State.SECOND_FLIP]:
+                        if pygame.time.get_ticks() - ai_last_move_time > 1000:
+                            flipped_indices = []
+                            if game_state.first_pos:
+                                flipped_indices.append(game_state.first_pos[0] * board.cols + game_state.first_pos[1])
+                            
+                            pos = current_player.choose_card(board, flipped_indices)
+                            if pos:
+                                row, col = pos
+                                card = board.get_card(row, col)
+                                res = game_state.handle_flip(card, row, col)
+                                if res in ["flipped_first", "flipped_second"]:
+                                    flip_animator.start_flip(card, True)
+                                    for p in game_mode.players:
+                                        if hasattr(p, 'remember'):
+                                            p.remember(row, col, card.symbol)
+                                            
+                                if game_state.state == State.CHECKING:
+                                    check_time = pygame.time.get_ticks()
+                                ai_last_move_time = pygame.time.get_ticks()
+                else:
+                    # Human logic
+                    if mouse_clicked and game_state.state in [State.FIRST_FLIP, State.SECOND_FLIP]:
+                        mx, my = mouse_pos
+                        for row in range(board.rows):
+                            for col in range(board.cols):
+                                cx = start_x + col * (card_width + margin)
+                                cy = start_y + row * (card_height + margin)
+                                card_rect = pygame.Rect(cx, cy, card_width, card_height)
+                                
+                                if card_rect.collidepoint(mx, my):
+                                    card = board.get_card(row, col)
+                                    res = game_state.handle_flip(card, row, col)
+                                    if res in ["flipped_first", "flipped_second"]:
+                                        flip_animator.start_flip(card, True)
+                                        for p in game_mode.players:
+                                            if hasattr(p, 'remember'):
+                                                p.remember(row, col, card.symbol)
+                                    
+                                    if game_state.state == State.CHECKING:
+                                        check_time = pygame.time.get_ticks()
+
+            # Draw Board
+            for row in range(board.rows):
+                for col in range(board.cols):
+                    card = board.get_card(row, col)
+                    if id(card) in hidden_cards:
+                        continue
+                        
+                    cx = start_x + col * (card_width + margin)
+                    cy = start_y + row * (card_height + margin)
+                    
+                    scale_x, img = flip_animator.get_scale_and_image(card, card_front_orig[card.symbol] if card.is_face_up or card.is_matched else None, card_back_orig)
+                    
+                    if img:
+                        scaled_w = int(card_width * scale_x)
+                        if scaled_w > 0:
+                            scaled_img = pygame.transform.scale(img, (scaled_w, card_height))
+                            # Offset x to keep it centered while flipping
+                            offset_x = (card_width - scaled_w) // 2
+                            screen.blit(scaled_img, (cx + offset_x, cy))
+                            
+                            if card.is_matched:
+                                overlay = pygame.Surface((scaled_w, card_height), pygame.SRCALPHA)
+                                overlay.fill((0, 0, 0, 100))
+                                screen.blit(overlay, (cx + offset_x, cy))
             
+            anim_manager.update_and_draw(screen, card_width, card_height)
+            
+            # Draw UI Panel in Top Corners
+            def draw_captured(player, base_x, base_y):
+                thumb_w, thumb_h = 24, 36
+                overlap_x = 12
+                
+                # Count how many flying cards this player currently has
+                flying_count = sum(1 for c in anim_manager.flying_cards if c.owner == player)
+                visible_count = len(player.captured_symbols) - flying_count
+                
+                for i, symbol in enumerate(player.captured_symbols):
+                    if i >= visible_count:
+                        break # Don't draw the ones that are still flying!
+                        
+                    img = card_front_orig[symbol]
+                    scaled = pygame.transform.scale(img, (thumb_w, thumb_h))
+                    screen.blit(scaled, (base_x + i * overlap_x, base_y))
+
+            if isinstance(game_mode, SoloMode):
+                time_left = int(game_mode.time_remaining)
+                time_str = f"Time: {time_left//60}:{time_left%60:02d}"
+                color = (255, 100, 100) if time_left < 30 else WHITE
+                draw_text(screen, time_str, info_font, color, 50, 20)
+                draw_text(screen, f"Score: {game_mode.players[0].score}", info_font, WHITE, 50, 60)
+                draw_captured(game_mode.players[0], 50, 95)
+            else:
+                p1 = game_mode.players[0]
+                p2 = game_mode.players[1]
+                
+                # Player 1 (Top Left)
+                p1_color = WHITE if game_mode.current_player == p1 else GRAY
+                draw_text(screen, f"{p1.name}", info_font, p1_color, 50, 20)
+                draw_text(screen, f"Score: {p1.score}", info_font, p1_color, 50, 50)
+                draw_captured(p1, 50, 85)
+                
+                # Player 2 (Top Right)
+                p2_color = WHITE if game_mode.current_player == p2 else GRAY
+                draw_text(screen, f"{p2.name}", info_font, p2_color, WIDTH - 200, 20)
+                draw_text(screen, f"Score: {p2.score}", info_font, p2_color, WIDTH - 200, 50)
+                draw_captured(p2, WIDTH - 200, 85)
+                
+                # Timer centered top
+                t_remaining = game_mode.turn_time_remaining
+                if t_remaining is not None:
+                    t_color = (255, 100, 100) if t_remaining <= 3 else WHITE
+                    draw_text(screen, f"{int(t_remaining)}s", info_font, t_color, WIDTH//2 - 20, 20)
+
+            if game_state.state == State.GAME_OVER:
+                draw_text(screen, "GAME OVER!", title_font, (255, 200, 50), WIDTH//2 - 150, HEIGHT//2 - 50)
+                draw_text(screen, "Press ESC to return", info_font, WHITE, WIDTH//2 - 100, HEIGHT//2 + 50)
+                
+            playing_quit_button.update(mouse_pos)
+            playing_quit_button.draw(screen)
+            if playing_quit_button.check_click(mouse_pos, mouse_clicked):
+                state = "MAIN_MENU"
+
             keys = pygame.key.get_pressed()
             if keys[pygame.K_ESCAPE]:
                 state = "MAIN_MENU"
 
-        # Update display
+        # STATE: HOW TO PLAY
+        elif state == "HOW_TO_PLAY":
+            screen.fill((20, 20, 40))
+            draw_text(screen, "How to Play Instructions", menu_font, WHITE, 50, HEIGHT//2 - 40)
+            draw_text(screen, "Press ESC to return to Menu", menu_font, GRAY, 50, HEIGHT//2 + 20)
+            keys = pygame.key.get_pressed()
+            if keys[pygame.K_ESCAPE]:
+                state = "MAIN_MENU"
+
         pygame.display.flip()
         clock.tick(FPS)
 

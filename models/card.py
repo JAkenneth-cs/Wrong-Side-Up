@@ -1,6 +1,4 @@
 class Card:
-    """Base card class. Demonstrates Encapsulation (private state) and is the
-    base for Inheritance by NumberCard and AnimalCard."""
 
     def __init__(self, symbol):
         self._symbol = symbol
@@ -36,21 +34,3 @@ class Card:
         if self._is_face_up or self._is_matched:
             return str(self._symbol)
         return "?"
-
-
-class NumberCard(Card):
-    """Inherits from Card. Overrides get_display() — Polymorphism."""
-
-    def get_display(self):
-        if self._is_face_up or self._is_matched:
-            return f"[ {self._symbol} ]"
-        return "[ ? ]"
-
-
-class AnimalCard(Card):
-    """Inherits from Card. Overrides get_display() — Polymorphism."""
-
-    def get_display(self):
-        if self._is_face_up or self._is_matched:
-            return self._symbol   # emoji character
-        return "🂠"
