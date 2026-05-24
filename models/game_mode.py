@@ -71,7 +71,7 @@ class SoloMode(GameMode):
     def _get_time_limit(self, difficulty):
         if difficulty == "Easy": return 5 * 60
         if difficulty == "Moderate": return 3 * 60
-        if difficulty == "Difficult": return 2 * 60
+        if difficulty == "Hard": return 2 * 60
         return 60
 
     @property

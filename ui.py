@@ -35,3 +35,13 @@ class Button:
         if self.is_hovered and mouse_clicked:
             return True
         return False
+
+def create_rounded_surface(surface, radius=10):
+    """Returns a copy of the surface with rounded corners."""
+    rect = surface.get_rect()
+    mask = pygame.Surface(rect.size, pygame.SRCALPHA)
+    pygame.draw.rect(mask, (255, 255, 255, 255), rect, border_radius=radius)
+    new_surface = surface.copy().convert_alpha()
+    new_surface.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+    return new_surface
+

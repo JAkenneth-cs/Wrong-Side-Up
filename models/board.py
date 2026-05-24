@@ -2,9 +2,9 @@ import random
 from models.card import Card
 
 GRID_SIZES = {
-    "Easy": (4, 4),    # 16 cards = 8 pairs
-    "Moderate": (4, 5),  # 20 cards = 10 pairs
-    "Difficult": (5, 6)     # 30 cards = 15 pairs
+    "Easy": (2, 6),    # 12 cards = 6 pairs
+    "Moderate": (3, 6),  # 18 cards = 9 pairs
+    "Hard": (4, 7)     # 28 cards = 14 pairs
 }
 
 class Board:

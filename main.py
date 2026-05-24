@@ -18,26 +18,43 @@ def draw_text(surface, text, font, color, x, y):
     surface.blit(text_obj, text_rect)
     return text_rect
 
+def create_rounded_surface(surface, radius=10):
+    """Returns a copy of the surface with rounded corners."""
+    rect = surface.get_rect()
+    mask = pygame.Surface(rect.size, pygame.SRCALPHA)
+    pygame.draw.rect(mask, (255, 255, 255, 255), rect, border_radius=radius)
+    new_surface = surface.copy().convert_alpha()
+    new_surface.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+    return new_surface
+
 def main():
     pygame.init()
     pygame.mixer.init() 
     WIDTH, HEIGHT = 800, 600
     FPS = 60
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+    WIDTH, HEIGHT = screen.get_size()
     pygame.display.set_caption("Wrong Side Up")
     clock = pygame.time.Clock()
     
+    title_font_path = "game-assets/fonts/Londrina_Sketch/LondrinaSketch-Regular.ttf"
     font_path = "game-assets/fonts/LondrinaSolid-Black.ttf"
+    
+    title_size = int(HEIGHT * 0.15)
+    menu_size = int(HEIGHT * 0.08)
+    card_size = int(HEIGHT * 0.06)
+    info_size = int(HEIGHT * 0.05)
+    
     try:
-        title_font = pygame.font.Font(font_path, 90)
-        menu_font = pygame.font.Font(font_path, 50)
-        card_font = pygame.font.Font(font_path, 36)
-        info_font = pygame.font.Font(font_path, 30)
+        title_font = pygame.font.Font(title_font_path, title_size)
+        menu_font = pygame.font.Font(font_path, menu_size)
+        card_font = pygame.font.Font(font_path, card_size)
+        info_font = pygame.font.Font(font_path, info_size)
     except Exception:
-        title_font = pygame.font.Font(None, 90)
-        menu_font = pygame.font.Font(None, 50)
-        card_font = pygame.font.Font(None, 36)
-        info_font = pygame.font.Font(None, 30)
+        title_font = pygame.font.Font(None, title_size)
+        menu_font = pygame.font.Font(None, menu_size)
+        card_font = pygame.font.Font(None, card_size)
+        info_font = pygame.font.Font(None, info_size)
         
     state = "MAIN_MENU"
     selected_mode = None
@@ -51,51 +68,54 @@ def main():
     CARD_FRONT = (200, 200, 200)
     CARD_MATCHED = (100, 255, 100)
     
-    bulb_x, bulb_y = 550, 250
-    base_glow_radius = 120
+    bulb_x, bulb_y = int(WIDTH * 0.7), int(HEIGHT * 0.4)
+    base_glow_radius = int(HEIGHT * 0.2)
+
+    btn_x = int(WIDTH * 0.08)
+    btn_start_y = int(HEIGHT * 0.4)
+    btn_gap = int(HEIGHT * 0.12)
 
     main_menu_buttons = [
-        Button(50, 250, "Play", menu_font, GRAY, WHITE),
-        Button(50, 330, "How to play", menu_font, GRAY, WHITE),
-        Button(50, 410, "Quit", menu_font, GRAY, WHITE)
+        Button(btn_x, btn_start_y, "Play", menu_font, GRAY, WHITE),
+        Button(btn_x, btn_start_y + btn_gap, "How to play", menu_font, GRAY, WHITE),
+        Button(btn_x, btn_start_y + btn_gap*2, "Quit", menu_font, GRAY, WHITE)
     ]
     
     mode_select_buttons = [
-        Button(50, 250, "Solo", menu_font, GRAY, WHITE),
-        Button(50, 330, "1v1", menu_font, GRAY, WHITE),
-        Button(50, 410, "Computer", menu_font, GRAY, WHITE),
-        Button(50, 490, "Back", menu_font, GRAY, WHITE)
+        Button(btn_x, btn_start_y, "Solo", menu_font, GRAY, WHITE),
+        Button(btn_x, btn_start_y + btn_gap, "1v1", menu_font, GRAY, WHITE),
+        Button(btn_x, btn_start_y + btn_gap*2, "Computer", menu_font, GRAY, WHITE),
+        Button(btn_x, btn_start_y + btn_gap*3, "Back", menu_font, GRAY, WHITE)
     ]
 
     difficulty_select_buttons = [
-        Button(50, 250, "Easy (4x4)", menu_font, GRAY, WHITE),
-        Button(50, 330, "Moderate (4x5)", menu_font, GRAY, WHITE),
-        Button(50, 410, "Difficult (5x6)", menu_font, GRAY, WHITE),
-        Button(50, 490, "Back", menu_font, GRAY, WHITE)
+        Button(btn_x, btn_start_y, "Easy", menu_font, GRAY, WHITE),
+        Button(btn_x, btn_start_y + btn_gap, "Moderate", menu_font, GRAY, WHITE),
+        Button(btn_x, btn_start_y + btn_gap*2, "Hard", menu_font, GRAY, WHITE),
+        Button(btn_x, btn_start_y + btn_gap*3, "Back", menu_font, GRAY, WHITE)
     ]
     
-    playing_quit_button = Button(WIDTH - 150, HEIGHT - 100, "Quit", menu_font, GRAY, WHITE)
+    playing_quit_button = Button(WIDTH - int(WIDTH * 0.15), HEIGHT - int(HEIGHT * 0.12), "Quit", menu_font, GRAY, WHITE)
     
     # Load Card Assets
     try:
-        card_back_orig = pygame.image.load("game-assets/sprite/cards/Backsides/DefaultForest.png").convert_alpha()
-        spritesheet = pygame.image.load("game-assets/sprite/cards/ForestCards.png").convert_alpha()
+        card_back_orig = pygame.image.load("game-assets/sprite/cards/Back.png").convert_alpha()
     except Exception as e:
         print(f"Failed to load card assets: {e}")
         pygame.quit()
         sys.exit()
 
     card_front_orig = {}
-    idx = 1
-    for row in range(4):
-        for col in range(13):
-            if idx > 32:
-                break
-            x = col * (23 + 1)
-            y = row * (35 + 1)
-            rect = pygame.Rect(x, y, 23, 35)
-            card_front_orig[idx] = spritesheet.subsurface(rect)
-            idx += 1
+    for s in range(1, 33):
+        # Map symbol s (1-32) to one of the 16 available front assets (2.png to 17.png) using modulo
+        file_num = 2 + ((s - 1) % 16)
+        filename = f"game-assets/sprite/cards/{file_num}.png"
+        try:
+            card_front_orig[s] = pygame.image.load(filename).convert_alpha()
+        except Exception as e:
+            print(f"Failed to load card front asset {filename}: {e}")
+            pygame.quit()
+            sys.exit()
     
     # Game variables
     board = None
@@ -135,29 +155,18 @@ def main():
         
         # Calculate board rendering variables
         available_width = WIDTH - 40 # Leave small margins
-        available_height = HEIGHT - 120 # Leave top space for player profiles
+        available_height = HEIGHT - 180 # Leave top space for player profiles
         
         cols = board.cols
         rows = board.rows
         
-        # Original asset size is 23x35
-        aspect_ratio = 23 / 35
-        
-        max_cell_w = (available_width - (cols + 1) * margin) // cols
-        max_cell_h = (available_height - (rows + 1) * margin) // rows
-        
-        # Calculate maximum size that fits within the cell while preserving aspect ratio
-        if max_cell_w / aspect_ratio <= max_cell_h:
-            card_width = max_cell_w
-            card_height = int(max_cell_w / aspect_ratio)
-        else:
-            card_height = max_cell_h
-            card_width = int(max_cell_h * aspect_ratio)
+        card_width = min(80, (available_width - (cols + 1) * margin) // cols)
+        card_height = min(120, (available_height - (rows + 1) * margin) // rows)
         
         # Center board horizontally, push down vertically
         board_w = cols * card_width + (cols - 1) * margin
         start_x = (WIDTH - board_w) // 2
-        start_y = 100
+        start_y = 160
         
         check_time = 0
         ai_last_move_time = pygame.time.get_ticks()
@@ -199,7 +208,7 @@ def main():
 
         # STATE: MAIN MENU
         if state == "MAIN_MENU":
-            draw_text(screen, "Wrong Side Up", title_font, WHITE, 50, 100)
+            draw_text(screen, "Wrong Side Up", title_font, WHITE, btn_x, int(HEIGHT * 0.15))
             for btn in main_menu_buttons:
                 btn.update(mouse_pos)
                 btn.draw(screen)
@@ -213,7 +222,7 @@ def main():
 
         # STATE: MODE SELECT
         elif state == "MODE_SELECT":
-            draw_text(screen, "Select Mode", title_font, WHITE, 50, 100)
+            draw_text(screen, "Select Mode", title_font, WHITE, btn_x, int(HEIGHT * 0.15))
             for btn in mode_select_buttons:
                 btn.update(mouse_pos)
                 btn.draw(screen)
@@ -226,7 +235,7 @@ def main():
 
         # STATE: DIFFICULTY SELECT
         elif state == "DIFFICULTY_SELECT":
-            draw_text(screen, "Select Difficulty", title_font, WHITE, 50, 100)
+            draw_text(screen, "Select Difficulty", title_font, WHITE, btn_x, int(HEIGHT * 0.15))
             for btn in difficulty_select_buttons:
                 btn.update(mouse_pos)
                 btn.draw(screen)
@@ -238,8 +247,8 @@ def main():
                             selected_difficulty = "Easy"
                         elif "Moderate" in btn.text:
                             selected_difficulty = "Moderate"
-                        elif "Difficult" in btn.text:
-                            selected_difficulty = "Difficult"
+                        elif "Hard" in btn.text:
+                            selected_difficulty = "Hard"
                         
                         init_game(selected_mode, selected_difficulty)
                         state = "PLAYING"
@@ -362,7 +371,7 @@ def main():
                     if img:
                         scaled_w = int(card_width * scale_x)
                         if scaled_w > 0:
-                            scaled_img = pygame.transform.smoothscale(img, (scaled_w, card_height))
+                            scaled_img = pygame.transform.scale(img, (scaled_w, card_height))
                             # Offset x to keep it centered while flipping
                             offset_x = (card_width - scaled_w) // 2
                             screen.blit(scaled_img, (cx + offset_x, cy))
@@ -388,7 +397,7 @@ def main():
                         break # Don't draw the ones that are still flying!
                         
                     img = card_front_orig[symbol]
-                    scaled = pygame.transform.smoothscale(img, (thumb_w, thumb_h))
+                    scaled = pygame.transform.scale(img, (thumb_w, thumb_h))
                     screen.blit(scaled, (base_x + i * overlap_x, base_y))
 
             if isinstance(game_mode, SoloMode):

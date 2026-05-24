@@ -1,4 +1,5 @@
 import pygame
+from ui import create_rounded_surface
 
 class FlyingCard:
     def __init__(self, img, start_x, start_y, target_x, target_y, target_w, target_h, owner=None, duration=600):
@@ -41,7 +42,8 @@ class FlyingCard:
             current_w = int(orig_w + (self.target_w - orig_w) * self.progress_ease)
             current_h = int(orig_h + (self.target_h - orig_h) * self.progress_ease)
             if current_w > 0 and current_h > 0:
-                scaled_img = pygame.transform.scale(self.img, (current_w, current_h))
+                scaled_img = pygame.transform.smoothscale(self.img, (current_w, current_h))
+                scaled_img = create_rounded_surface(scaled_img, radius=8)
                 screen.blit(scaled_img, (int(self.current_x), int(self.current_y)))
 
 class AnimationManager:
