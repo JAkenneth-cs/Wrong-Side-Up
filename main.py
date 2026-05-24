@@ -9,6 +9,7 @@ from models.game_state import GameState, State
 from models.player import HumanPlayer, AIPlayer
 from animations import AnimationManager, FlipAnimator
 
+
 def draw_text(surface, text, font, color, x, y):
     """Helper function to draw static text and return its rect"""
     text_obj = font.render(text, True, color)
@@ -19,6 +20,7 @@ def draw_text(surface, text, font, color, x, y):
 
 def main():
     pygame.init()
+    pygame.mixer.init() 
     WIDTH, HEIGHT = 800, 600
     FPS = 60
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -138,8 +140,19 @@ def main():
         cols = board.cols
         rows = board.rows
         
-        card_width = min(80, (available_width - (cols + 1) * margin) // cols)
-        card_height = min(120, (available_height - (rows + 1) * margin) // rows)
+        # Original asset size is 23x35
+        aspect_ratio = 23 / 35
+        
+        max_cell_w = (available_width - (cols + 1) * margin) // cols
+        max_cell_h = (available_height - (rows + 1) * margin) // rows
+        
+        # Calculate maximum size that fits within the cell while preserving aspect ratio
+        if max_cell_w / aspect_ratio <= max_cell_h:
+            card_width = max_cell_w
+            card_height = int(max_cell_w / aspect_ratio)
+        else:
+            card_height = max_cell_h
+            card_width = int(max_cell_h * aspect_ratio)
         
         # Center board horizontally, push down vertically
         board_w = cols * card_width + (cols - 1) * margin
@@ -349,7 +362,7 @@ def main():
                     if img:
                         scaled_w = int(card_width * scale_x)
                         if scaled_w > 0:
-                            scaled_img = pygame.transform.scale(img, (scaled_w, card_height))
+                            scaled_img = pygame.transform.smoothscale(img, (scaled_w, card_height))
                             # Offset x to keep it centered while flipping
                             offset_x = (card_width - scaled_w) // 2
                             screen.blit(scaled_img, (cx + offset_x, cy))
@@ -375,7 +388,7 @@ def main():
                         break # Don't draw the ones that are still flying!
                         
                     img = card_front_orig[symbol]
-                    scaled = pygame.transform.scale(img, (thumb_w, thumb_h))
+                    scaled = pygame.transform.smoothscale(img, (thumb_w, thumb_h))
                     screen.blit(scaled, (base_x + i * overlap_x, base_y))
 
             if isinstance(game_mode, SoloMode):
