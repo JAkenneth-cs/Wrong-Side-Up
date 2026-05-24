@@ -18,13 +18,22 @@ def draw_text(surface, text, font, color, x, y):
     surface.blit(text_obj, text_rect)
     return text_rect
 
+def draw_centered_text(surface, text, font, color, y):
+    """Helper function to draw static text perfectly centered horizontally"""
+    text_obj = font.render(text, True, color)
+    text_rect = text_obj.get_rect(center=(surface.get_width()//2, y))
+    surface.blit(text_obj, text_rect)
+    return text_rect
+
 def create_rounded_surface(surface, radius=10):
-    """Returns a copy of the surface with rounded corners."""
-    rect = surface.get_rect()
-    mask = pygame.Surface(rect.size, pygame.SRCALPHA)
-    pygame.draw.rect(mask, (255, 255, 255, 255), rect, border_radius=radius)
+    """Returns a copy of the surface with perfectly soft, anti-aliased rounded corners."""
+    w, h = surface.get_size()
+    mask = pygame.Surface((w * 2, h * 2), pygame.SRCALPHA)
+    pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=radius * 2)
+    mask = pygame.transform.smoothscale(mask, (w, h))
+    
     new_surface = surface.copy().convert_alpha()
-    new_surface.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+    new_surface.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
     return new_surface
 
 def main():
@@ -95,7 +104,6 @@ def main():
         Button(btn_x, btn_start_y + btn_gap*3, "Back", menu_font, GRAY, WHITE)
     ]
     
-    playing_quit_button = Button(WIDTH - int(WIDTH * 0.15), HEIGHT - int(HEIGHT * 0.12), "Quit", menu_font, GRAY, WHITE)
     
     # Load Card Assets
     try:
@@ -160,8 +168,16 @@ def main():
         cols = board.cols
         rows = board.rows
         
-        card_width = min(80, (available_width - (cols + 1) * margin) // cols)
-        card_height = min(120, (available_height - (rows + 1) * margin) // rows)
+        max_card_width = int(((available_width - (cols + 1) * margin) // cols) * 0.9)
+        max_card_height = int(((available_height - (rows + 1) * margin) // rows) * 0.9)
+        
+        # Enforce 2:3 aspect ratio
+        card_width = max_card_width
+        card_height = int(card_width * 1.5)
+        
+        if card_height > max_card_height:
+            card_height = max_card_height
+            card_width = int(card_height / 1.5)
         
         # Center board horizontally, push down vertically
         board_w = cols * card_width + (cols - 1) * margin
@@ -372,6 +388,11 @@ def main():
                         scaled_w = int(card_width * scale_x)
                         if scaled_w > 0:
                             scaled_img = pygame.transform.scale(img, (scaled_w, card_height))
+                            
+                            # Make the edges softly curved!
+                            if scaled_w > 10:
+                                scaled_img = create_rounded_surface(scaled_img, radius=min(25, scaled_w//6))
+                                
                             # Offset x to keep it centered while flipping
                             offset_x = (card_width - scaled_w) // 2
                             screen.blit(scaled_img, (cx + offset_x, cy))
@@ -379,6 +400,8 @@ def main():
                             if card.is_matched:
                                 overlay = pygame.Surface((scaled_w, card_height), pygame.SRCALPHA)
                                 overlay.fill((0, 0, 0, 100))
+                                if scaled_w > 10:
+                                    overlay = create_rounded_surface(overlay, radius=min(25, scaled_w//6))
                                 screen.blit(overlay, (cx + offset_x, cy))
             
             anim_manager.update_and_draw(screen, card_width, card_height)
@@ -430,23 +453,34 @@ def main():
                     draw_text(screen, f"{int(t_remaining)}s", info_font, t_color, WIDTH//2 - 20, 20)
 
             if game_state.state == State.GAME_OVER:
-                draw_text(screen, "GAME OVER!", title_font, (255, 200, 50), WIDTH//2 - 150, HEIGHT//2 - 50)
-                draw_text(screen, "Press ESC to return", info_font, WHITE, WIDTH//2 - 100, HEIGHT//2 + 50)
+                draw_centered_text(screen, "GAME OVER!", title_font, (255, 200, 50), HEIGHT//2 - 50)
+                draw_centered_text(screen, "Press ESC to return", info_font, WHITE, HEIGHT//2 + 50)
                 
-            playing_quit_button.update(mouse_pos)
-            playing_quit_button.draw(screen)
-            if playing_quit_button.check_click(mouse_pos, mouse_clicked):
-                state = "MAIN_MENU"
-
             keys = pygame.key.get_pressed()
             if keys[pygame.K_ESCAPE]:
+                state = "CONFIRM_QUIT"
+                pygame.time.delay(200)
+
+        # STATE: CONFIRM QUIT
+        elif state == "CONFIRM_QUIT":
+            screen.fill((20, 20, 40))
+            draw_centered_text(screen, "Quit to Main Menu?", title_font, WHITE, HEIGHT//2 - 100)
+            draw_centered_text(screen, "Press ENTER to Quit", menu_font, (255, 100, 100), HEIGHT//2 + 20)
+            draw_centered_text(screen, "Press ESC to Cancel", menu_font, GRAY, HEIGHT//2 + 80)
+            
+            keys = pygame.key.get_pressed()
+            if keys[pygame.K_RETURN] or keys[pygame.K_KP_ENTER]:
                 state = "MAIN_MENU"
+                pygame.time.delay(200)
+            elif keys[pygame.K_ESCAPE]:
+                state = "PLAYING"
+                pygame.time.delay(200)
 
         # STATE: HOW TO PLAY
         elif state == "HOW_TO_PLAY":
             screen.fill((20, 20, 40))
-            draw_text(screen, "How to Play Instructions", menu_font, WHITE, 50, HEIGHT//2 - 40)
-            draw_text(screen, "Press ESC to return to Menu", menu_font, GRAY, 50, HEIGHT//2 + 20)
+            draw_centered_text(screen, "How to Play Instructions", menu_font, WHITE, HEIGHT//2 - 40)
+            draw_centered_text(screen, "Press ESC to return to Menu", menu_font, GRAY, HEIGHT//2 + 40)
             keys = pygame.key.get_pressed()
             if keys[pygame.K_ESCAPE]:
                 state = "MAIN_MENU"
