@@ -8,6 +8,8 @@ from models.game_mode import SoloMode, PVPMode, PVAIMode
 from models.game_state import GameState, State
 from models.player import HumanPlayer, AIPlayer
 from animations import AnimationManager, FlipAnimator
+from audio import AudioManager
+
 
 
 def draw_text(surface, text, font, color, x, y):
@@ -38,7 +40,6 @@ def create_rounded_surface(surface, radius=10):
 
 def main():
     pygame.init()
-    pygame.mixer.init() 
     WIDTH, HEIGHT = 800, 600
     FPS = 60
     screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
@@ -46,6 +47,9 @@ def main():
     pygame.display.set_caption("Wrong Side Up")
     clock = pygame.time.Clock()
     
+    audio_manager = AudioManager()
+    audio_manager.play_main_menu_music()
+        
     title_font_path = "game-assets/fonts/Londrina_Sketch/LondrinaSketch-Regular.ttf"
     font_path = "game-assets/fonts/LondrinaSolid-Black.ttf"
     
@@ -104,8 +108,13 @@ def main():
         Button(btn_x, btn_start_y + btn_gap*3, "Back", menu_font, GRAY, WHITE)
     ]
     
+    # Pre-calculate center position for the Return button in GAME_OVER state
+    return_surf = menu_font.render("Return", True, WHITE)
+    return_btn = Button(WIDTH//2 - return_surf.get_width()//2, HEIGHT//2 + 50, "Return", menu_font, GRAY, WHITE)
     
-    # Load Background Assets
+    
+
+    # Load background images
     bgs = []
     try:
         bgs = [
@@ -147,6 +156,7 @@ def main():
     check_time = 0
     CHECK_DELAY = 1000 # 1 second delay when checking two cards
     ai_last_move_time = 0
+    transition_start_time = 0
     anim_manager = AnimationManager()
     flip_animator = FlipAnimator()
     
@@ -204,7 +214,10 @@ def main():
         mouse_pos = pygame.mouse.get_pos()
         mouse_clicked = False
         
-        for event in pygame.event.get():
+        events = pygame.event.get()
+        audio_manager.update(events)
+        
+        for event in events:
             if event.type == pygame.QUIT:
                 running = False
             if event.type == pygame.MOUSEBUTTONDOWN:
@@ -213,19 +226,15 @@ def main():
                     
         # Background Effects for Menu States
         if state in ["MAIN_MENU", "MODE_SELECT", "DIFFICULTY_SELECT"]:
-            flicker_val = random.randint(0, 100)
-            is_flickering = flicker_val > 90
+            # Flickering effect between bg1 and bg2 (index 0 and 1)
+            bg_index = 0 if pygame.time.get_ticks() % 100 < 50 else 1
 
             if bgs:
-                if is_flickering:
-                    # Swap to dim/off backgrounds to create a realistic flicker
-                    screen.blit(random.choice([bgs[1], bgs[2]]), (0, 0))
-                else:
-                    # Default lights-on background
-                    screen.blit(bgs[0], (0, 0))
+                # Blit either bgs[0] or bgs[1] depending on the time
+                screen.blit(bgs[bg_index], (0, 0))
             else:
                 # Fallback to the original programmatic shapes if assets are missing
-                if is_flickering:
+                if bg_index == 1:
                     bg_color = (10, 30, 10)
                     glow_alpha = random.randint(20, 80)
                     glow_radius = base_glow_radius - random.randint(20, 40)
@@ -233,14 +242,14 @@ def main():
                     bg_color = BG_BASE_COLOR
                     glow_alpha = random.randint(150, 200)
                     glow_radius = base_glow_radius + random.randint(-5, 5)
-
+    
                 screen.fill(bg_color)
                 pygame.draw.line(screen, (10,10,10), (bulb_x, 0), (bulb_x, bulb_y - 20), 4)
                 pygame.draw.rect(screen, (30,30,30), (bulb_x - 15, bulb_y - 30, 30, 20))
                 glow_surface = pygame.Surface((glow_radius*2, glow_radius*2), pygame.SRCALPHA)
                 pygame.draw.circle(glow_surface, (200, 255, 150, glow_alpha), (glow_radius, glow_radius), glow_radius)
                 screen.blit(glow_surface, (bulb_x - glow_radius, bulb_y - glow_radius))
-                bulb_color = (200, 255, 200) if is_flickering else (240, 255, 240)
+                bulb_color = (200, 255, 200) if bg_index == 1 else (240, 255, 240)
                 pygame.draw.circle(screen, bulb_color, (bulb_x, bulb_y), 25)
 
         # STATE: MAIN MENU
@@ -289,10 +298,16 @@ def main():
                         
                         init_game(selected_mode, selected_difficulty)
                         state = "PLAYING"
+                        audio_manager.play_gameplay_music()
+                        
+
                         
         # STATE: PLAYING
         elif state == "PLAYING":
-            screen.fill((30, 30, 30))
+            if bgs and len(bgs) > 2:
+                screen.blit(bgs[2], (0, 0))
+            else:
+                screen.fill((30, 30, 30))
             
             # Auto-resolve CHECKING state after delay
             if game_state.state == State.CHECKING:
@@ -474,8 +489,39 @@ def main():
                     draw_text(screen, f"{int(t_remaining)}s", info_font, t_color, WIDTH//2 - 20, 20)
 
             if game_state.state == State.GAME_OVER:
-                draw_centered_text(screen, "GAME OVER!", title_font, (255, 200, 50), HEIGHT//2 - 50)
-                draw_centered_text(screen, "Press ESC to return", info_font, WHITE, HEIGHT//2 + 50)
+                # Check for win condition against computer
+                msg = "GAME OVER!"
+                if isinstance(game_mode, PVAIMode):
+                    p1_score = game_mode.players[0].score
+                    ai_score = game_mode.players[1].score
+                    if p1_score > ai_score:
+                        msg = "Congratulations!"
+                elif isinstance(game_mode, SoloMode):
+                    msg = "Well Done!"
+                elif isinstance(game_mode, PVPMode):
+                    p1_score = game_mode.players[0].score
+                    p2_score = game_mode.players[1].score
+                    if p1_score > p2_score:
+                        msg = f"{game_mode.players[0].name} Wins!"
+                    elif p2_score > p1_score:
+                        msg = f"{game_mode.players[1].name} Wins!"
+                    else:
+                        msg = "It's a Tie!"
+                
+                # Dark overlay for better readability of game over text
+                overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, 150))
+                screen.blit(overlay, (0, 0))
+                
+                draw_centered_text(screen, msg, title_font, (255, 200, 50), HEIGHT//2 - 50)
+                
+                # Draw and update return button
+                return_btn.update(mouse_pos)
+                return_btn.draw(screen)
+                
+                if return_btn.check_click(mouse_pos, mouse_clicked):
+                    state = "MAIN_MENU"
+                    audio_manager.play_main_menu_music()
                 
             keys = pygame.key.get_pressed()
             if keys[pygame.K_ESCAPE]:
@@ -484,7 +530,14 @@ def main():
 
         # STATE: CONFIRM QUIT
         elif state == "CONFIRM_QUIT":
-            screen.fill((20, 20, 40))
+            if bgs and len(bgs) > 2:
+                screen.blit(bgs[2], (0, 0))
+                # Add a semi-transparent overlay to make text readable
+                overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, 120))
+                screen.blit(overlay, (0, 0))
+            else:
+                screen.fill((20, 20, 40))
             draw_centered_text(screen, "Quit to Main Menu?", title_font, WHITE, HEIGHT//2 - 100)
             draw_centered_text(screen, "Press ENTER to Quit", menu_font, (255, 100, 100), HEIGHT//2 + 20)
             draw_centered_text(screen, "Press ESC to Cancel", menu_font, GRAY, HEIGHT//2 + 80)
@@ -492,6 +545,7 @@ def main():
             keys = pygame.key.get_pressed()
             if keys[pygame.K_RETURN] or keys[pygame.K_KP_ENTER]:
                 state = "MAIN_MENU"
+                audio_manager.play_main_menu_music()
                 pygame.time.delay(200)
             elif keys[pygame.K_ESCAPE]:
                 state = "PLAYING"
@@ -499,7 +553,14 @@ def main():
 
         # STATE: HOW TO PLAY
         elif state == "HOW_TO_PLAY":
-            screen.fill((20, 20, 40))
+            if bgs and len(bgs) > 2:
+                screen.blit(bgs[2], (0, 0))
+                # Add a semi-transparent overlay to make text readable
+                overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, 120))
+                screen.blit(overlay, (0, 0))
+            else:
+                screen.fill((20, 20, 40))
             draw_centered_text(screen, "How to Play Instructions", menu_font, WHITE, HEIGHT//2 - 40)
             draw_centered_text(screen, "Press ESC to return to Menu", menu_font, GRAY, HEIGHT//2 + 40)
             keys = pygame.key.get_pressed()
