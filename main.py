@@ -292,7 +292,10 @@ def main():
                         
         # STATE: PLAYING
         elif state == "PLAYING":
-            screen.fill((30, 30, 30))
+            if bgs and len(bgs) >= 3:
+                screen.blit(bgs[2], (0, 0))
+            else:
+                screen.fill((30, 30, 30))
             
             # Auto-resolve CHECKING state after delay
             if game_state.state == State.CHECKING:
