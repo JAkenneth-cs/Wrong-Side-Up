@@ -10,8 +10,12 @@ from models.player import HumanPlayer, AIPlayer
 from animations import AnimationManager, FlipAnimator
 from audio import AudioManager
 
-
-
+try:
+    import cv2
+    import numpy as np
+    HAS_CV2 = True
+except ImportError:
+    HAS_CV2 = False
 def draw_text(surface, text, font, color, x, y):
     """Helper function to draw static text and return its rect"""
     text_obj = font.render(text, True, color)
@@ -118,7 +122,25 @@ def main():
     return_surf = menu_font.render("Return", True, WHITE)
     return_btn = Button(WIDTH//2 - return_surf.get_width()//2, HEIGHT//2 + 50, "Return", menu_font, GRAY, WHITE)
     
-    
+    # Load video background
+    video_frames = []
+    if HAS_CV2:
+        try:
+            print("Pre-loading menu background video into memory... This might take a few seconds!")
+            cap = cv2.VideoCapture("game-assets/background/background main menu.mov")
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                # Convert BGR to RGB and swap axes for Pygame
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB).swapaxes(0, 1)
+                surf = pygame.surfarray.make_surface(frame)
+                surf = pygame.transform.scale(surf, (WIDTH, HEIGHT))
+                video_frames.append(surf)
+            cap.release()
+            print(f"Loaded {len(video_frames)} frames successfully.")
+        except Exception as e:
+            print(f"Could not load background video: {e}")
 
     # Load background images
     bgs = []
@@ -232,13 +254,26 @@ def main():
                     
         # Background Effects for Menu States
         if state in ["MAIN_MENU", "MODE_SELECT", "DIFFICULTY_SELECT"]:
-            # Flickering effect between bg1 and bg2 (index 0 and 1)
-            bg_index = 0 if pygame.time.get_ticks() % 100 < 50 else 1
-
-            if bgs:
-                # Blit either bgs[0] or bgs[1] depending on the time
-                screen.blit(bgs[bg_index], (0, 0))
+            if video_frames:
+                # Synchronize perfectly with the background music
+                music_pos = pygame.mixer.music.get_pos()
+                if music_pos == -1:
+                    # Music is stopped/paused during the delay loop
+                    # Freeze on the very last frame of the video (the black door pause)
+                    frame_idx = len(video_frames) - 1
+                else:
+                    # 30 FPS video sync -> (pos_ms / 1000) * 30
+                    frame_idx = int((music_pos / 1000.0) * 30.0)
+                    frame_idx = frame_idx % len(video_frames)
+                    
+                screen.blit(video_frames[frame_idx], (0, 0))
             else:
+                # Flickering effect between bg1 and bg2 (index 0 and 1) fallback
+                bg_index = 0 if pygame.time.get_ticks() % 100 < 50 else 1
+    
+                if bgs:
+                    # Blit either bgs[0] or bgs[1] depending on the time
+                    screen.blit(bgs[bg_index], (0, 0))
                 # Fallback to the original programmatic shapes if assets are missing
                 if bg_index == 1:
                     bg_color = (10, 30, 10)
@@ -261,37 +296,51 @@ def main():
         # STATE: MAIN MENU
         if state == "MAIN_MENU":
             draw_text(screen, "Wrong Side Up", title_font, WHITE, btn_x, int(HEIGHT * 0.15))
+            hovered_id = None
             for btn in main_menu_buttons:
                 btn.update(mouse_pos)
                 btn.draw(screen)
+                if btn.is_hovered:
+                    hovered_id = id(btn)
                 if btn.check_click(mouse_pos, mouse_clicked):
+                    audio_manager.play_keypress()
                     if btn.text == "Play":
                         state = "MODE_SELECT"
                     elif btn.text == "How to play":
                         state = "HOW_TO_PLAY"
                     elif btn.text == "Quit":
                         running = False
+            audio_manager.play_hover(hovered_id)
 
         # STATE: MODE SELECT
         elif state == "MODE_SELECT":
             draw_text(screen, "Select Mode", title_font, WHITE, btn_x, int(HEIGHT * 0.15))
+            hovered_id = None
             for btn in mode_select_buttons:
                 btn.update(mouse_pos)
                 btn.draw(screen)
+                if btn.is_hovered:
+                    hovered_id = id(btn)
                 if btn.check_click(mouse_pos, mouse_clicked):
+                    audio_manager.play_keypress()
                     if btn.text == "Back":
                         state = "MAIN_MENU"
                     else:
                         selected_mode = btn.text
                         state = "DIFFICULTY_SELECT"
+            audio_manager.play_hover(hovered_id)
 
         # STATE: DIFFICULTY SELECT
         elif state == "DIFFICULTY_SELECT":
             draw_text(screen, "Select Difficulty", title_font, WHITE, btn_x, int(HEIGHT * 0.15))
+            hovered_id = None
             for btn in difficulty_select_buttons:
                 btn.update(mouse_pos)
                 btn.draw(screen)
+                if btn.is_hovered:
+                    hovered_id = id(btn)
                 if btn.check_click(mouse_pos, mouse_clicked):
+                    audio_manager.play_keypress()
                     if btn.text == "Back":
                         state = "MODE_SELECT"
                     else:
@@ -305,6 +354,7 @@ def main():
                         init_game(selected_mode, selected_difficulty)
                         state = "PLAYING"
                         audio_manager.play_gameplay_music()
+            audio_manager.play_hover(hovered_id)
                         
 
                         
@@ -332,21 +382,31 @@ def main():
                         # Determine target corner based on current player
                         current = game_mode.current_player
                         
-                        thumb_w, thumb_h = 24, 36
-                        overlap_x = 12
+                        thumb_w, thumb_h = 36, 54
+                        _MARGIN = 20
+                        _GAP = 15
                         
                         is_p1 = (current == game_mode.players[0])
                         
                         if isinstance(game_mode, SoloMode):
-                            base_x, base_y = 50, 95
+                            # Measure text width and compute deck position
+                            _tw = max(info_font.size("Player 1")[0], info_font.size(f"Score: {current.score}")[0])
+                            base_x = _MARGIN + _tw + _GAP
+                            base_y = 30
+                            overlap_x = 18
                         else:
-                            base_x = 50 if is_p1 else WIDTH - 200
-                            base_y = 85
+                            if is_p1:
+                                _tw = max(info_font.size(current.name)[0], info_font.size(f"Score: {current.score}")[0])
+                                base_x = _MARGIN + _tw + _GAP
+                                overlap_x = 18
+                            else:
+                                _tw = max(info_font.size(current.name)[0], info_font.size(f"Score: {current.score}")[0])
+                                _text_x = WIDTH - _MARGIN - _tw
+                                base_x = _text_x - _GAP - thumb_w
+                                overlap_x = -18
+                            base_y = 30
                             
                         # Calculate exact target position in the deck stack
-                        # The player's score was already incremented by GameState, 
-                        # so captured_symbols already has them. 
-                        # The two cards just added are at len-2 and len-1.
                         idx1 = len(current.captured_symbols) - 2
                         idx2 = len(current.captured_symbols) - 1
                         
@@ -385,6 +445,7 @@ def main():
                                 res = game_state.handle_flip(card, row, col)
                                 if res in ["flipped_first", "flipped_second"]:
                                     flip_animator.start_flip(card, True)
+                                    audio_manager.play_flip()
                                     for p in game_mode.players:
                                         if hasattr(p, 'remember'):
                                             p.remember(row, col, card.symbol)
@@ -407,6 +468,7 @@ def main():
                                     res = game_state.handle_flip(card, row, col)
                                     if res in ["flipped_first", "flipped_second"]:
                                         flip_animator.start_flip(card, True)
+                                        audio_manager.play_flip()
                                         for p in game_mode.players:
                                             if hasattr(p, 'remember'):
                                                 p.remember(row, col, card.symbol)
@@ -450,8 +512,8 @@ def main():
             
             # Draw UI Panel in Top Corners
             def draw_captured(player, base_x, base_y):
-                thumb_w, thumb_h = 24, 36
-                overlap_x = 12
+                thumb_w, thumb_h = 36, 54
+                overlap_x = -18 if base_x > WIDTH // 2 else 18
                 
                 # Count how many flying cards this player currently has
                 flying_count = sum(1 for c in anim_manager.flying_cards if c.owner == player)
@@ -465,34 +527,55 @@ def main():
                     scaled = pygame.transform.scale(img, (thumb_w, thumb_h))
                     screen.blit(scaled, (base_x + i * overlap_x, base_y))
 
+            _MARGIN = 20
+            _GAP = 15
+            _CARD_W = 36
+            
             if isinstance(game_mode, SoloMode):
+                _tw = max(info_font.size("Player 1")[0], info_font.size(f"Score: {game_mode.players[0].score}")[0])
+                _deck_x = _MARGIN + _tw + _GAP
+                draw_text(screen, "Player 1", info_font, WHITE, _MARGIN, 20)
+                draw_text(screen, f"Score: {game_mode.players[0].score}", info_font, WHITE, _MARGIN, 60)
                 time_left = int(game_mode.time_remaining)
                 time_str = f"Time: {time_left//60}:{time_left%60:02d}"
                 color = (255, 100, 100) if time_left < 30 else WHITE
-                draw_text(screen, time_str, info_font, color, 50, 20)
-                draw_text(screen, f"Score: {game_mode.players[0].score}", info_font, WHITE, 50, 60)
-                draw_captured(game_mode.players[0], 50, 95)
+                draw_text(screen, time_str, info_font, color, _MARGIN, 100)
+                draw_captured(game_mode.players[0], _deck_x, 30)
             else:
                 p1 = game_mode.players[0]
                 p2 = game_mode.players[1]
+                t_remaining = game_mode.turn_time_remaining
+                
+                # Measure each player's max text width
+                _p1_tw = max(info_font.size(p1.name)[0], info_font.size(f"Score: {p1.score}")[0])
+                _p2_tw = max(info_font.size(p2.name)[0], info_font.size(f"Score: {p2.score}")[0])
+                if t_remaining is not None:
+                    _p1_tw = max(_p1_tw, info_font.size(f"Time: {int(t_remaining)}s")[0])
+                    _p2_tw = max(_p2_tw, info_font.size(f"Time: {int(t_remaining)}s")[0])
+                
+                # P1: text at MARGIN, deck starts right after text + GAP
+                _p1_deck_x = _MARGIN + _p1_tw + _GAP
+                # P2: text ends at WIDTH-MARGIN, deck first-card right-edge = text_start - GAP
+                _p2_text_x = WIDTH - _MARGIN - _p2_tw
+                _p2_deck_x = _p2_text_x - _GAP - _CARD_W
                 
                 # Player 1 (Top Left)
                 p1_color = WHITE if game_mode.current_player == p1 else GRAY
-                draw_text(screen, f"{p1.name}", info_font, p1_color, 50, 20)
-                draw_text(screen, f"Score: {p1.score}", info_font, p1_color, 50, 50)
-                draw_captured(p1, 50, 85)
+                draw_text(screen, f"{p1.name}", info_font, p1_color, _MARGIN, 20)
+                draw_text(screen, f"Score: {p1.score}", info_font, p1_color, _MARGIN, 60)
+                if game_mode.current_player == p1 and t_remaining is not None:
+                    t_color = (255, 100, 100) if t_remaining <= 3 else WHITE
+                    draw_text(screen, f"Time: {int(t_remaining)}s", info_font, t_color, _MARGIN, 100)
+                draw_captured(p1, _p1_deck_x, 30)
                 
                 # Player 2 (Top Right)
                 p2_color = WHITE if game_mode.current_player == p2 else GRAY
-                draw_text(screen, f"{p2.name}", info_font, p2_color, WIDTH - 200, 20)
-                draw_text(screen, f"Score: {p2.score}", info_font, p2_color, WIDTH - 200, 50)
-                draw_captured(p2, WIDTH - 200, 85)
-                
-                # Timer centered top
-                t_remaining = game_mode.turn_time_remaining
-                if t_remaining is not None:
+                draw_text(screen, f"{p2.name}", info_font, p2_color, _p2_text_x, 20)
+                draw_text(screen, f"Score: {p2.score}", info_font, p2_color, _p2_text_x, 60)
+                if game_mode.current_player == p2 and t_remaining is not None:
                     t_color = (255, 100, 100) if t_remaining <= 3 else WHITE
-                    draw_text(screen, f"{int(t_remaining)}s", info_font, t_color, WIDTH//2 - 20, 20)
+                    draw_text(screen, f"Time: {int(t_remaining)}s", info_font, t_color, _p2_text_x, 100)
+                draw_captured(p2, _p2_deck_x, 30)
 
             if game_state.state == State.GAME_OVER:
                 # Check for win condition against computer
