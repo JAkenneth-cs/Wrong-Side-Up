@@ -105,6 +105,18 @@ def main():
     ]
     
     
+    # Load Background Assets
+    bgs = []
+    try:
+        bgs = [
+            pygame.transform.scale(pygame.image.load("game-assets/background/bg 1.png").convert(), (WIDTH, HEIGHT)),
+            pygame.transform.scale(pygame.image.load("game-assets/background/bg 2.png").convert(), (WIDTH, HEIGHT)),
+            pygame.transform.scale(pygame.image.load("game-assets/background/bg 3.png").convert(), (WIDTH, HEIGHT)),
+        ]
+    except Exception as e:
+        print(f"Background images not found, using fallback: {e}")
+        bgs = []
+
     # Load Card Assets
     try:
         card_back_orig = pygame.image.load("game-assets/sprite/cards/Back.png").convert_alpha()
@@ -204,23 +216,32 @@ def main():
             flicker_val = random.randint(0, 100)
             is_flickering = flicker_val > 90
             
-            if is_flickering:
-                bg_color = (10, 30, 10)
-                glow_alpha = random.randint(20, 80)
-                glow_radius = base_glow_radius - random.randint(20, 40)
+            if bgs:
+                if is_flickering:
+                    # Swap to dim/off backgrounds to create a realistic flicker
+                    screen.blit(random.choice([bgs[1], bgs[2]]), (0, 0))
+                else:
+                    # Default lights-on background
+                    screen.blit(bgs[0], (0, 0))
             else:
-                bg_color = BG_BASE_COLOR
-                glow_alpha = random.randint(150, 200)
-                glow_radius = base_glow_radius + random.randint(-5, 5)
-                
-            screen.fill(bg_color)
-            pygame.draw.line(screen, (10,10,10), (bulb_x, 0), (bulb_x, bulb_y - 20), 4)
-            pygame.draw.rect(screen, (30,30,30), (bulb_x - 15, bulb_y - 30, 30, 20))
-            glow_surface = pygame.Surface((glow_radius*2, glow_radius*2), pygame.SRCALPHA)
-            pygame.draw.circle(glow_surface, (200, 255, 150, glow_alpha), (glow_radius, glow_radius), glow_radius)
-            screen.blit(glow_surface, (bulb_x - glow_radius, bulb_y - glow_radius))
-            bulb_color = (200, 255, 200) if is_flickering else (240, 255, 240)
-            pygame.draw.circle(screen, bulb_color, (bulb_x, bulb_y), 25)
+                # Fallback to the original programmatic shapes if assets are missing
+                if is_flickering:
+                    bg_color = (10, 30, 10)
+                    glow_alpha = random.randint(20, 80)
+                    glow_radius = base_glow_radius - random.randint(20, 40)
+                else:
+                    bg_color = BG_BASE_COLOR
+                    glow_alpha = random.randint(150, 200)
+                    glow_radius = base_glow_radius + random.randint(-5, 5)
+                    
+                screen.fill(bg_color)
+                pygame.draw.line(screen, (10,10,10), (bulb_x, 0), (bulb_x, bulb_y - 20), 4)
+                pygame.draw.rect(screen, (30,30,30), (bulb_x - 15, bulb_y - 30, 30, 20))
+                glow_surface = pygame.Surface((glow_radius*2, glow_radius*2), pygame.SRCALPHA)
+                pygame.draw.circle(glow_surface, (200, 255, 150, glow_alpha), (glow_radius, glow_radius), glow_radius)
+                screen.blit(glow_surface, (bulb_x - glow_radius, bulb_y - glow_radius))
+                bulb_color = (200, 255, 200) if is_flickering else (240, 255, 240)
+                pygame.draw.circle(screen, bulb_color, (bulb_x, bulb_y), 25)
 
         # STATE: MAIN MENU
         if state == "MAIN_MENU":
