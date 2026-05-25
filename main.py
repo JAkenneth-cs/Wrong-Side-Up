@@ -63,11 +63,17 @@ def main():
         menu_font = pygame.font.Font(font_path, menu_size)
         card_font = pygame.font.Font(font_path, card_size)
         info_font = pygame.font.Font(font_path, info_size)
+        htp_title_font = pygame.font.Font(title_font_path, int(HEIGHT * 0.11))
+        htp_cat_font   = pygame.font.Font(title_font_path, int(HEIGHT * 0.065))
+        htp_body_font  = pygame.font.Font(font_path, int(HEIGHT * 0.035))
     except Exception:
         title_font = pygame.font.Font(None, title_size)
         menu_font = pygame.font.Font(None, menu_size)
         card_font = pygame.font.Font(None, card_size)
         info_font = pygame.font.Font(None, info_size)
+        htp_title_font = pygame.font.Font(None, int(HEIGHT * 0.11))
+        htp_cat_font   = pygame.font.Font(None, int(HEIGHT * 0.065))
+        htp_body_font  = pygame.font.Font(None, int(HEIGHT * 0.035))
         
     state = "MAIN_MENU"
     selected_mode = None
@@ -555,17 +561,67 @@ def main():
         elif state == "HOW_TO_PLAY":
             if bgs and len(bgs) > 2:
                 screen.blit(bgs[2], (0, 0))
-                # Add a semi-transparent overlay to make text readable
                 overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-                overlay.fill((0, 0, 0, 120))
+                overlay.fill((0, 0, 0, 160))
                 screen.blit(overlay, (0, 0))
             else:
                 screen.fill((20, 20, 40))
-            draw_centered_text(screen, "How to Play Instructions", menu_font, WHITE, HEIGHT//2 - 40)
-            draw_centered_text(screen, "Press ESC to return to Menu", menu_font, GRAY, HEIGHT//2 + 40)
+
+            # --- Back arrow button (top-left) ---
+            arrow_rect = pygame.Rect(30, 25, 60, 50)
+            arrow_hover = arrow_rect.collidepoint(mouse_pos)
+            arrow_color = WHITE if arrow_hover else GRAY
+            # Draw a simple left-pointing arrow
+            pts = [
+                (arrow_rect.left + 20, arrow_rect.centery),
+                (arrow_rect.left + 45, arrow_rect.top + 10),
+                (arrow_rect.left + 45, arrow_rect.bottom - 10)
+            ]
+            pygame.draw.polygon(screen, arrow_color, pts)
+            if mouse_clicked and arrow_rect.collidepoint(mouse_pos):
+                state = "MAIN_MENU"
+
+            # --- Title ---
+            draw_centered_text(screen, "How to Play", htp_title_font, WHITE, int(HEIGHT * 0.08))
+
+            # --- Instructions (concise & comprehensive) ---
+            sections = [
+                ("Objective",   ["Flip cards to find matching pairs. Most pairs wins!"]),
+                ("Game Modes",  [
+                    "Solo  -  Beat the clock. Clear all pairs before time runs out.",
+                    "1v1   -  Two players take turns. Most matched pairs wins.",
+                    "Computer  -  Face the AI. Each turn is limited to 10 seconds."
+                ]),
+                ("Difficulty",  [
+                    "Easy      12 cards (6 pairs)   5 min timer",
+                    "Moderate  18 cards (9 pairs)   3 min timer",
+                    "Hard      28 cards (14 pairs)  2 min timer"
+                ]),
+                ("How to Play", [
+                    "1. Click any face-down card to flip it.",
+                    "2. Click a second card to try to match it.",
+                    "3. A match stays face-up & flies to your score pile.",
+                    "4. A miss flips both cards back — remember them!"
+                ])
+            ]
+
+            y = int(HEIGHT * 0.18)
+            gap_cat  = int(HEIGHT * 0.060)
+            gap_body = int(HEIGHT * 0.038)
+            gap_sec  = int(HEIGHT * 0.025)
+
+            for cat, lines in sections:
+                draw_centered_text(screen, cat, htp_cat_font, WHITE, y)
+                y += gap_cat
+                for line in lines:
+                    draw_centered_text(screen, line, htp_body_font, WHITE, y)
+                    y += gap_body
+                y += gap_sec
+
             keys = pygame.key.get_pressed()
             if keys[pygame.K_ESCAPE]:
                 state = "MAIN_MENU"
+                pygame.time.delay(200)
 
         pygame.display.flip()
         clock.tick(FPS)
